@@ -1,0 +1,66 @@
+name: CI — Lacrei Saúde API
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Lint + Testes
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: lacrei_saude_test
+          POSTGRES_USER: lacrei
+          POSTGRES_PASSWORD: lacrei123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar Poetry
+        run: pip install poetry
+
+      - name: Instalar dependências
+        run: poetry install --no-root
+
+      - name: Lint com flake8
+        run: poetry run flake8 . --max-line-length=120 --exclude=migrations,__pycache__
+        continue-on-error: true
+
+      - name: Rodar testes
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+          DEBUG: "True"
+          ALLOWED_HOSTS: localhost,127.0.0.1
+          DATABASE_URL: postgresql://lacrei:lacrei123@localhost:5432/lacrei_saude_test
+        run: poetry run python manage.py test --verbosity=2
+
+  build:
+    name: Build Docker
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Build imagem Docker
+        run: docker build -t lacrei-saude-api .
